@@ -51,7 +51,9 @@ class HudWindow(QtWidgets.QWidget):
         self._timer.start(500)
 
         self._font = QtGui.QFont("SF Mono", 11, QtGui.QFont.Weight.Bold)
+        self._font.setFamilies(["SF Mono", "Menlo", "Monaco", "Courier New", "monospace"])
         self._small_font = QtGui.QFont("SF Mono", 9)
+        self._small_font.setFamilies(["SF Mono", "Menlo", "Monaco", "Courier New", "monospace"])
 
         self.show()
 

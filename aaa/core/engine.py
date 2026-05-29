@@ -102,6 +102,7 @@ class Engine:
         self._last_anchor_check_file: Optional[str] = None
         self._session_start = time.time()
         self._reconnect_delay = 1.0
+        self._qt_app = None
 
         for key in INTERVENTION_MESSAGES:
             setattr(self, f"_{key}_timer", 0.0)
@@ -112,6 +113,13 @@ class Engine:
     def _log(self, msg: str):
         _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         log.info(msg)
+
+    def _ui_call(self, fn, *args, **kwargs):
+        try:
+            from PySide6 import QtCore
+            QtCore.QTimer.singleShot(0, lambda: fn(*args, **kwargs))
+        except Exception:
+            pass
 
     def _load_baseline(self):
         if _STATE_PATH.exists():
@@ -216,7 +224,7 @@ class Engine:
         self.audio.play_texture("tension" if kind in ("tension", "slouch") else "stuck")
 
         from aaa.ui.notifications import show_intervention
-        show_intervention(title, sub)
+        self._ui_call(show_intervention, title, sub)
 
     def _check_anchors(self):
         active = get_active_window()
@@ -256,7 +264,7 @@ class Engine:
             for f in file_changes[:1]:
                 add_anchor(file_path=f, module_name=f, event="big_refactor")
                 from aaa.ui.notifications import show_anchor_prompt
-                show_anchor_prompt(f)
+                self._ui_call(show_anchor_prompt, f)
 
     def run(self):
         self._running = True
@@ -310,7 +318,7 @@ class Engine:
                     anchor_reminder = self._check_anchors()
                     if anchor_reminder:
                         from aaa.ui.notifications import show_anchor_reminder
-                        show_anchor_reminder(anchor_reminder)
+                        self._ui_call(show_anchor_reminder, anchor_reminder)
 
                     self._track_focus()
                     file_changes = self._check_file_changes()

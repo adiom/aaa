@@ -8,6 +8,13 @@ _OVERLAY_DURATION = 5.0
 _FADE_DURATION = 1.0
 _ACCENT_COLOR = QtGui.QColor(108, 99, 255)
 
+def _mono_font(size: int, bold: bool = False) -> QtGui.QFont:
+    f = QtGui.QFont("SF Mono", size)
+    f.setFamilies(["SF Mono", "Menlo", "Monaco", "Courier New", "monospace"])
+    if bold:
+        f.setWeight(QtGui.QFont.Weight.Bold)
+    return f
+
 
 class OverlayWindow(QtWidgets.QWidget):
     def __init__(self, text: str, subtext: str = "", accent_color: QtGui.QColor = _ACCENT_COLOR):
@@ -63,13 +70,13 @@ class OverlayWindow(QtWidgets.QWidget):
         painter.drawRoundedRect(r, 24, 24)
 
         painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF")))
-        title_font = QtGui.QFont("SF Mono", 20, QtGui.QFont.Weight.Bold)
+        title_font = _mono_font(20, bold=True)
         painter.setFont(title_font)
         painter.drawText(r, QtCore.Qt.AlignmentFlag.AlignCenter, self._text)
 
         if self._subtext:
             painter.setPen(QtGui.QPen(QtGui.QColor("#C0C0C0")))
-            sub_font = QtGui.QFont("SF Mono", 12)
+            sub_font = _mono_font(12)
             painter.setFont(sub_font)
             sub_r = QtCore.QRect(r.x(), r.y() + 55, r.width(), r.height() - 60)
             painter.drawText(sub_r, QtCore.Qt.AlignmentFlag.AlignHCenter | QtCore.Qt.AlignmentFlag.AlignTop, self._subtext)
