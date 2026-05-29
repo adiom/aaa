@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aaa"
+dynamic = ["version"]
+description = "Adaptive Attention Anchor — turn your body into a living interface for better code"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [
+  { name = "aaa contributors" },
+]
+dependencies = [
+  "mediapipe",
+  "opencv-python",
+  "PySide6",
+  "pynput",
+  "pygetwindow; platform_system != 'Linux'",
+  "python-xlib; platform_system == 'Linux'",
+  "sounddevice",
+  "numpy>=1.26,<3",
+  "rich",
+  "typer",
+  "plyer",
+  "psutil",
+]
+
+[project.scripts]
+aaa = "aaa.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["aaa*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "aaa.__version__" }
