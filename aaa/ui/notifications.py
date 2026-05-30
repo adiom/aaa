@@ -235,5 +235,8 @@ def show_anchor_reminder(anchor: dict):
 
 
 def show_gesture_feedback(gesture: str):
+    from aaa.ui.tray import get_tray
     label, desc = GESTURE_LABELS.get(gesture, ("Жест", ""))
-    OverlayWindow(f"👤  {label}", desc, accent_color=QtGui.QColor(0, 200, 100))
+    tray = get_tray()
+    if tray:
+        tray.notify(f"👤  {label}", desc, 2500)

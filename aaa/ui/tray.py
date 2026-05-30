@@ -10,10 +10,18 @@ from typing import Optional
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+_tray_instance: Optional["TrayIcon"] = None
+
+
+def get_tray() -> Optional["TrayIcon"]:
+    return _tray_instance
+
 
 class TrayIcon(QtWidgets.QSystemTrayIcon):
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
+        global _tray_instance
+        _tray_instance = self
         self._setup_icon()
         self._setup_menu()
         self.activated.connect(self._on_activated)
@@ -66,6 +74,10 @@ class TrayIcon(QtWidgets.QSystemTrayIcon):
         elif text == "stopped":
             self.start_action.setEnabled(True)
             self.stop_action.setEnabled(False)
+
+    def notify(self, title: str, message: str, duration_ms: int = 3000):
+        icon = QtWidgets.QSystemTrayIcon.MessageIcon.Information
+        self.showMessage(title, message, icon, duration_ms)
 
 
 def start_tray():
