@@ -97,8 +97,20 @@ def compute_baseline(posture_baseline: dict, face_baseline: dict) -> dict:
     return {**posture_baseline, **face_baseline}
 
 
+def _check_brightness(frame: np.ndarray) -> tuple[str, float]:
+    import cv2
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    mean_brightness = float(np.mean(gray))
+    if mean_brightness < 40:
+        return "too_dark", mean_brightness
+    elif mean_brightness > 220:
+        return "too_bright", mean_brightness
+    return "good", mean_brightness
+
+
 def calibrate_all(duration: float = 15.0, camera_index: int = 0, ip_url: str | None = None) -> dict:
     """Calibrate posture + face in one camera session."""
+    import platform
     import time
     import cv2
 
@@ -119,6 +131,68 @@ def calibrate_all(duration: float = 15.0, camera_index: int = 0, ip_url: str | N
 
     posture = PostureDetector()
     face = FaceDetector()
+
+    window_name = "Calibration - sit naturally"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(window_name, 640, 480)
+
+    # --- Pre-check phase: show pose / face / lighting status ---
+    precheck_start = time.time()
+    precheck_duration = 5.0
+
+    while time.time() - precheck_start < precheck_duration:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        p = posture.process(frame)
+        f = face.process(frame)
+
+        lighting_status, brightness = _check_brightness(frame)
+        pose_ok = p["pose_detected"]
+        face_ok = f["face_detected"]
+
+        y = 40
+        cv2.putText(frame, "Pre-check — adjust if needed:", (20, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+        y += 35
+
+        if pose_ok:
+            cv2.putText(frame, "  Pose: detected", (20, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 200, 0), 2)
+        else:
+            cv2.putText(frame, "  Pose: NOT detected — face the camera",
+                        (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 200), 2)
+        y += 30
+
+        if face_ok:
+            cv2.putText(frame, "  Face: detected", (20, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 200, 0), 2)
+        else:
+            cv2.putText(frame, "  Face: NOT detected — face the camera",
+                        (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 200), 2)
+        y += 30
+
+        if lighting_status == "good":
+            cv2.putText(frame, f"  Lighting: good ({brightness:.0f})", (20, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 200, 0), 2)
+        elif lighting_status == "too_dark":
+            cv2.putText(frame, "  Lighting: too dark — turn on lights",
+                        (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 200), 2)
+        else:
+            cv2.putText(frame, "  Lighting: too bright — reduce light",
+                        (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 200), 2)
+        y += 40
+
+        remaining = precheck_duration - (time.time() - precheck_start)
+        cv2.putText(frame, f"Starting calibration in {remaining:.0f}s",
+                    (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+
+        cv2.imshow(window_name, frame)
+        if cv2.waitKey(1) & 0xFF == 27:
+            break
+
+    # --- Calibration phase ---
     posture_samples: dict[str, list] = {"slouch_score": [], "neck_forward_angle": [], "spine_angle": [], "shoulder_slope": []}
     face_samples: dict[str, list] = {"blink_rate": [], "gaze_fixation": [], "mouth_tension": [], "head_pitch": [], "head_yaw": [], "head_roll": []}
     start = time.time()
@@ -126,6 +200,14 @@ def calibrate_all(duration: float = 15.0, camera_index: int = 0, ip_url: str | N
     while time.time() - start < duration:
         ret, frame = cap.read()
         if not ret:
+            break
+
+        cv2.putText(frame, "Calibrating... sit naturally", (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+        cv2.putText(frame, f"Time remaining: {duration - (time.time() - start):.0f}s",
+                    (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.imshow(window_name, frame)
+        if cv2.waitKey(1) & 0xFF == 27:
             break
 
         p = posture.process(frame)
@@ -138,8 +220,7 @@ def calibrate_all(duration: float = 15.0, camera_index: int = 0, ip_url: str | N
             for k in face_samples:
                 face_samples[k].append(f[k])
 
-        time.sleep(0.05)
-
+    cv2.destroyWindow(window_name)
     posture.close()
     face.close()
     cap.release()

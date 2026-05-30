@@ -1,16 +1,17 @@
 import json
 import logging
-import random
 import time
 import traceback
 from pathlib import Path
 from typing import Optional
 
 import cv2
+from pynput.keyboard import Key, Controller as KeyboardController
 
 from aaa.detectors.posture import PostureDetector
 from aaa.detectors.face import FaceDetector
 from aaa.detectors.attention import AttentionEngine
+from aaa.detectors.gestures import GestureDetector
 from aaa.core.audio import AudioEngine
 from aaa.core.anchors import add_anchor, find_anchor_for_file
 from aaa.utils.config import load_config
@@ -34,49 +35,9 @@ logging.basicConfig(
 log = logging.getLogger("aaa")
 
 
-INTERVENTION_MESSAGES = {
-    "slouch": [
-        ("⟐  straighten  ⟐", "your skeleton is your architecture"),
-        ("⟐  unwind  ⟐", "your spine wants to be long"),
-        ("⟐  rise  ⟐", "imagine a string pulling you up from the crown of your head"),
-        ("⟐  open  ⟐", "roll your shoulders back and down"),
-    ],
-    "neck": [
-        ("⌇  release  ⌇", "your neck is carrying more than it should"),
-        ("⌇  lengthen  ⌇", "tuck your chin gently, feel the back of your neck stretch"),
-        ("⌇  float  ⌇", "imagine your head is a balloon"),
-    ],
-    "stare": [
-        ("◉  drift  ◉", "your eyes have been fixed too long. look at something 6m away"),
-        ("◉  soften  ◉", "unfocus your gaze. let your peripheral vision open"),
-        ("◉  distance  ◉", "find the farthest point you can see and rest there"),
-    ],
-    "blink": [
-        ("◈  blink  ◈", "slowly. three times. feel your eyelids"),
-        ("◈  hydrate  ◈", "your eyes are dry. blink fully, close for 2 seconds"),
-        ("◈  reset  ◈", "close your eyes for 5 seconds"),
-    ],
-    "jaw": [
-        ("⏾  unclench  ⏾", "part your lips. tongue resting on the roof of your mouth"),
-        ("⏾  soften  ⏾", "your jaw should not hold tension. let it hang"),
-        ("⏾  release  ⏾", "massage your jaw muscles with your fingertips"),
-    ],
-    "breath": [
-        ("〰️  breathe  〰️", "inhale 4s — hold 2s — exhale 6s"),
-        ("〰️  slow down  〰️", "your breath is your anchor. feel it"),
-        ("〰️  reset  〰️", "three deep breaths. in through nose, out through mouth"),
-    ],
-    "tension": [
-        ("⚡  shake it off  ⚡", "shake your hands for 10 seconds"),
-        ("⚡  micro-break  ⚡", "stand up. arms above head. breathe deep"),
-        ("⚡  reset  ⚡", "roll your wrists, shrug your shoulders, wiggle your fingers"),
-    ],
-    "stillness": [
-        ("⋯  move  ⋯", "you've been still too long. shift your weight"),
-        ("⋯  flow  ⋯", "micro-movement: trace an infinity symbol with your nose"),
-        ("⋯  stretch  ⋯", "reach one arm to the ceiling, then the other"),
-    ],
-}
+INTERVENTION_KINDS = [
+    "slouch", "neck", "stare", "blink", "jaw", "breath", "tension", "stillness",
+]
 
 
 class Engine:
@@ -92,6 +53,8 @@ class Engine:
         self.face = FaceDetector()
         self.attention = AttentionEngine()
         self.audio = AudioEngine()
+        self.gestures = GestureDetector()
+        self._gesture_keyboard = None
         self.cap: Optional[cv2.VideoCapture] = None
         self.baseline: dict = {}
         self._running = False
@@ -104,7 +67,7 @@ class Engine:
         self._reconnect_delay = 1.0
         self._qt_app = None
 
-        for key in INTERVENTION_MESSAGES:
+        for key in INTERVENTION_KINDS:
             setattr(self, f"_{key}_timer", 0.0)
 
         self._load_baseline()
@@ -219,12 +182,44 @@ class Engine:
         return chosen
 
     def _handle_intervention(self, kind: str):
-        msgs = INTERVENTION_MESSAGES.get(kind, [("⋆  pause  ⋆", "")])
-        title, sub = random.choice(msgs)
         self.audio.play_texture("tension" if kind in ("tension", "slouch") else "stuck")
 
         from aaa.ui.notifications import show_intervention
-        self._ui_call(show_intervention, title, sub)
+        self._ui_call(show_intervention, kind)
+
+    def _handle_gesture(self, gesture_result: dict):
+        gesture = gesture_result.get("gesture")
+        if not gesture:
+            return
+        try:
+            if self._gesture_keyboard is None:
+                self._gesture_keyboard = KeyboardController()
+
+            from aaa.ui.notifications import show_gesture_feedback
+
+            kb = self._gesture_keyboard
+            if gesture == "nod":
+                kb.press(Key.page_down)
+                kb.release(Key.page_down)
+                log.info("Gesture: nod → PageDown")
+                self._ui_call(show_gesture_feedback, "nod")
+
+            elif gesture == "tilt_left":
+                with kb.pressed(Key.alt):
+                    kb.press(Key.tab)
+                    kb.release(Key.tab)
+                log.info("Gesture: tilt_left → Alt+Tab")
+                self._ui_call(show_gesture_feedback, "tilt_left")
+
+            elif gesture == "tilt_right":
+                with kb.pressed(Key.alt):
+                    with kb.pressed(Key.shift):
+                        kb.press(Key.tab)
+                        kb.release(Key.tab)
+                log.info("Gesture: tilt_right → Alt+Shift+Tab")
+                self._ui_call(show_gesture_feedback, "tilt_right")
+        except Exception as e:
+            log.error("Gesture action failed: %s", e)
 
     def _check_anchors(self):
         active = get_active_window()
@@ -302,7 +297,14 @@ class Engine:
                     face_signals = self.face.process(frame, fps=cam_cfg["fps"])
                     attention_result = self.attention.update(posture_signals, face_signals, self.baseline)
 
+                    gesture_result = self.gestures.process(
+                        face_signals.get("nose_y", 0.0),
+                        face_signals.get("eye_angle", 0.0),
+                    )
+                    self._handle_gesture(gesture_result)
+
                     combined = {**posture_signals, **face_signals}
+                    combined["last_gesture"] = gesture_result.get("gesture")
                     self._save_state(combined, attention_result)
 
                     state = attention_result.get("state", "unknown")

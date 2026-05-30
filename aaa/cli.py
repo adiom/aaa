@@ -40,9 +40,12 @@ def _is_daemon_running() -> bool:
         return False
     pid = int(_PID_PATH.read_text().strip())
     try:
-        os.kill(pid, 0)
-        return True
-    except (ProcessLookupError, PermissionError):
+        import psutil
+        if psutil.pid_exists(pid):
+            proc = psutil.Process(pid)
+            return proc.is_running()
+        return False
+    except (ProcessLookupError, PermissionError, OSError, psutil.NoSuchProcess):
         _PID_PATH.unlink(missing_ok=True)
         return False
 
@@ -151,17 +154,15 @@ def stop():
 
     pid = int(_PID_PATH.read_text().strip())
     try:
-        os.kill(pid, signal.SIGTERM)
-        for _ in range(10):
-            time.sleep(0.3)
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                break
-        else:
-            os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
+        import psutil
+        proc = psutil.Process(pid)
+        proc.terminate()
+        proc.wait(timeout=5)
+    except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+        try:
+            proc.kill()
+        except Exception:
+            pass
 
     _PID_PATH.unlink(missing_ok=True)
     console.print("[green]aaa stopped.[/green]")
@@ -182,7 +183,8 @@ def calibrate(
         _list_cameras_and_exit()
 
     console.print("[bold]Calibration[/bold] — sit naturally for 15 seconds.")
-    console.print("aaa will measure your resting posture, breathing, and blink rate.\n")
+    console.print("aaa will first check your pose, face visibility, and lighting.")
+    console.print("Adjust your position based on the on-screen feedback.\n")
 
     try:
         from aaa.detectors.attention import calibrate_all

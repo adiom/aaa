@@ -15,6 +15,12 @@ _STATUS_PATH = Path.home() / ".aaa" / "state.json"
 _status_lock = threading.Lock()
 _cached_status: dict = {}
 
+GESTURE_RU = {
+    "nod": "Кивок",
+    "tilt_left": "Наклон ←",
+    "tilt_right": "Наклон →",
+}
+
 
 def _read_status():
     global _cached_status
@@ -39,12 +45,12 @@ class HudWindow(QtWidgets.QWidget):
         )
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setFixedSize(220, 130)
+        self.setFixedSize(260, 170)
 
         screen = QtWidgets.QApplication.primaryScreen()
         if screen:
             geo = screen.availableGeometry()
-            self.move(geo.width() - 240, 20)
+            self.move(geo.width() - 280, 20)
 
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._tick)
@@ -54,6 +60,9 @@ class HudWindow(QtWidgets.QWidget):
         self._font.setFamilies(["SF Mono", "Menlo", "Monaco", "Courier New", "monospace"])
         self._small_font = QtGui.QFont("SF Mono", 9)
         self._small_font.setFamilies(["SF Mono", "Menlo", "Monaco", "Courier New", "monospace"])
+
+        self._last_gesture = ""
+        self._gesture_fade = 0.0
 
         self.show()
 
@@ -75,6 +84,7 @@ class HudWindow(QtWidgets.QWidget):
         pose = status.get("pose_detected", False)
         face = status.get("face_detected", False)
         state = status.get("state", "unknown")
+        last_gesture = status.get("last_gesture", "")
 
         y = 14
         self._draw_dot(p, 16, y, camera, "cam")
@@ -92,19 +102,30 @@ class HudWindow(QtWidgets.QWidget):
         self._draw_dot(p, 16, y, face, "face")
         p.setFont(self._small_font)
         p.setPen(QtGui.QColor("#909090"))
-        p.drawText(32, y + 4, self._fmt("blink", status))
+        p.drawText(32, y + 4, f"морг: {status.get('blink_rate', 0):.0f}/мин")
 
         y += 22
         self._draw_dot(p, 16, y, state == "tension", "tension")
         p.setFont(self._small_font)
         p.setPen(QtGui.QColor("#909090"))
-        p.drawText(32, y + 4, self._fmt("slouch", status))
+        p.drawText(32, y + 4, f"сутул: {status.get('slouch_score', 0):.2f}")
 
         y += 22
         self._draw_dot(p, 16, y, state == "flow", "flow")
         p.setFont(self._small_font)
         p.setPen(QtGui.QColor("#909090"))
-        p.drawText(32, y + 4, self._fmt("gaze", status))
+        p.drawText(32, y + 4, f"взгляд: {status.get('gaze_fixation', 0):.2f}")
+
+        if last_gesture:
+            label = GESTURE_RU.get(last_gesture, last_gesture)
+            self._gesture_fade = 1.0
+
+        if self._gesture_fade > 0.01:
+            p.setFont(self._small_font)
+            p.setPen(QtGui.QColor(100, 255, 100, int(255 * self._gesture_fade)))
+            label = GESTURE_RU.get(last_gesture, last_gesture or "")
+            if label:
+                p.drawText(32, y + 22, f"жест: {label}")
 
     def _draw_dot(self, p: QtGui.QPainter, x: int, y: int, active: bool, kind: str):
         colors = {
@@ -128,15 +149,14 @@ class HudWindow(QtWidgets.QWidget):
         }.get(state, QtGui.QColor("#888888"))
 
     def _state_label(self, s: dict) -> str:
+        ru = {"flow": "поток", "stuck": "завис", "tension": "напряжение"}
         state = s.get("state", "unknown")
         conf = s.get("confidence", 0)
-        return f"{state} ({conf:.2f})"
-
-    def _fmt(self, label: str, s: dict) -> str:
-        val = s.get(label, 0)
-        return f"{label}: {val:.2f}" if isinstance(val, float) else f"{label}: {val}"
+        label = ru.get(state, state)
+        return f"{label} ({conf:.2f})"
 
     def _tick(self):
+        self._gesture_fade *= 0.98
         self.update()
 
 

@@ -10,9 +10,8 @@ Signals:
 """
 
 import collections
-import math
+import os
 import time
-from typing import Optional
 
 import cv2
 import mediapipe as mp
@@ -20,12 +19,10 @@ import numpy as np
 
 from aaa.utils.helpers import smooth_value, clamp
 
-mp_face_mesh = mp.solutions.face_mesh
+_MODEL_PATH = os.path.expanduser("~/.aaa/models/face_landmarker.task")
 
-LEFT_EYE = [33, 133, 157, 158, 159, 160, 161, 173]
-RIGHT_EYE = [362, 263, 380, 381, 382, 383, 384, 385]
-LEFT_IRIS = [474, 475, 476, 477]
-RIGHT_IRIS = [469, 470, 471, 472]
+LEFT_EYE = [33, 159, 158, 133, 153, 155]
+RIGHT_EYE = [362, 385, 386, 263, 374, 380]
 NOSE_TIP = 1
 NOSE_BRIDGE = 168
 HEAD_TOP = 10
@@ -34,12 +31,18 @@ CHIN = 152
 
 class FaceDetector:
     def __init__(self, min_detection_confidence: float = 0.5):
-        self.face_mesh = mp_face_mesh.FaceMesh(
-            min_detection_confidence=min_detection_confidence,
+        from mediapipe.tasks.python.vision import FaceLandmarker, FaceLandmarkerOptions
+        from mediapipe.tasks.python.core import base_options as base_options_lib
+
+        base = base_options_lib.BaseOptions(model_asset_path=_MODEL_PATH)
+        options = FaceLandmarkerOptions(
+            base_options=base,
+            min_face_detection_confidence=min_detection_confidence,
             min_tracking_confidence=0.5,
-            max_num_faces=1,
-            refine_landmarks=True,
+            output_face_blendshapes=False,
+            output_facial_transformation_matrixes=False,
         )
+        self.face_mesh = FaceLandmarker.create_from_options(options)
         self._ear_history: collections.deque = collections.deque(maxlen=10)
         self._blink_timestamps: list[float] = []
         self._blink_cooldown = 0.0
@@ -102,7 +105,8 @@ class FaceDetector:
     def process(self, frame: cv2.Mat, fps: float = 30.0) -> dict:
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w = frame.shape[:2]
-        results = self.face_mesh.process(rgb)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = self.face_mesh.detect(mp_image)
         signals = {
             "blink_rate": 0.0,
             "head_pitch": 0.0,
@@ -113,19 +117,20 @@ class FaceDetector:
             "face_detected": False,
         }
 
-        if not results.multi_face_landmarks:
+        if not result.face_landmarks or len(result.face_landmarks) == 0:
             self._frames_no_face += 1
             return signals
 
         self._frames_no_face = 0
-        landmarks = results.multi_face_landmarks[0].landmark
+        landmarks = result.face_landmarks[0]
 
         ear_left = self._eye_aspect_ratio(landmarks, LEFT_EYE)
         ear_right = self._eye_aspect_ratio(landmarks, RIGHT_EYE)
         ear = (ear_left + ear_right) / 2.0
         self._ear_history.append(ear)
 
-        blink_threshold = 0.18
+        running_avg = float(np.mean(self._ear_history)) if self._ear_history else 0.5
+        blink_threshold = max(0.28, running_avg * 0.60)
         now = time.time()
         if ear < blink_threshold and self._prev_ear >= blink_threshold:
             if now - self._blink_cooldown > 0.1:
@@ -155,6 +160,15 @@ class FaceDetector:
         lip_dist = np.linalg.norm(upper_lip - lower_lip)
         tension = clamp(1.0 - (lip_dist * 5.0))
         signals["mouth_tension"] = tension
+
+        nose_tip_pt = np.array([landmarks[NOSE_TIP].x, landmarks[NOSE_TIP].y])
+        signals["nose_y"] = float(nose_tip_pt[1])
+
+        left_eye_center = np.mean([[landmarks[i].x, landmarks[i].y] for i in LEFT_EYE], axis=0)
+        right_eye_center = np.mean([[landmarks[i].x, landmarks[i].y] for i in RIGHT_EYE], axis=0)
+        eye_delta = right_eye_center - left_eye_center
+        signals["eye_angle"] = float(np.degrees(np.arctan2(eye_delta[1], eye_delta[0])))
+
         signals["face_detected"] = True
 
         return signals

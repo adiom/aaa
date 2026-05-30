@@ -16,6 +16,7 @@ Computed signals:
   - chest_height: proxy for breathing / chest expansion
 """
 
+import os
 from typing import Optional
 
 import cv2
@@ -24,16 +25,21 @@ import numpy as np
 
 from aaa.utils.helpers import smooth_value, clamp
 
-mp_pose = mp.solutions.pose
+_MODEL_PATH = os.path.expanduser("~/.aaa/models/pose_landmarker_heavy.task")
 
 
 class PostureDetector:
     def __init__(self, min_detection_confidence: float = 0.5):
-        self.pose = mp_pose.Pose(
-            min_detection_confidence=min_detection_confidence,
+        from mediapipe.tasks.python.vision import PoseLandmarker, PoseLandmarkerOptions
+        from mediapipe.tasks.python.core import base_options as base_options_lib
+
+        base = base_options_lib.BaseOptions(model_asset_path=_MODEL_PATH)
+        options = PoseLandmarkerOptions(
+            base_options=base,
+            min_pose_detection_confidence=min_detection_confidence,
             min_tracking_confidence=0.5,
-            model_complexity=1,
         )
+        self.pose = PoseLandmarker.create_from_options(options)
         self.slouch_score: float = 0.0
         self.shoulder_slope: float = 0.0
         self.neck_forward_angle: float = 0.0
@@ -44,7 +50,8 @@ class PostureDetector:
 
     def process(self, frame: cv2.Mat) -> dict:
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = self.pose.process(rgb)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = self.pose.detect(mp_image)
         signals = {
             "slouch_score": 0.0,
             "shoulder_slope": 0.0,
@@ -54,14 +61,14 @@ class PostureDetector:
             "pose_detected": False,
         }
 
-        if not results.pose_landmarks:
+        if not result.pose_landmarks or len(result.pose_landmarks) == 0:
             self._frames_since_detection += 1
             if self._frames_since_detection > self._max_frames_no_detection:
                 signals["slouch_score"] = 1.0
             return signals
 
         self._frames_since_detection = 0
-        lm = results.pose_landmarks.landmark
+        lm = result.pose_landmarks[0]
 
         left_shoulder = np.array([lm[11].x, lm[11].y, lm[11].z])
         right_shoulder = np.array([lm[12].x, lm[12].y, lm[12].z])

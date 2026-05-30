@@ -8,6 +8,57 @@ _OVERLAY_DURATION = 5.0
 _FADE_DURATION = 1.0
 _ACCENT_COLOR = QtGui.QColor(108, 99, 255)
 
+GESTURE_LABELS = {
+    "nod": ("Кивок", "↓ PageDown — прокрутка вниз"),
+    "tilt_left": ("Наклон влево", "⟳ Alt+Tab — переключение окна"),
+    "tilt_right": ("Наклон вправо", "⟳ Alt+Shift+Tab — обратно"),
+}
+
+INTERVENTION_RU = {
+    "slouch": [
+        ("⟐  выпрямись  ⟐", "твоя осанка — твоя архитектура"),
+        ("⟐  расправься  ⟐", "позвоночник хочет быть длинным"),
+        ("⟐  вверх  ⟐", "представь нитку, тянущую макушку вверх"),
+        ("⟐  откройся  ⟐", "плечи назад и вниз"),
+    ],
+    "neck": [
+        ("⌇  расслабь  ⌇", "шея несёт больше, чем должна"),
+        ("⌇  вытяни  ⌇", "мягко втяни подбородок — почувствуй заднюю часть шеи"),
+        ("⌇  легкость  ⌇", "представь, что голова — воздушный шар"),
+    ],
+    "stare": [
+        ("◉  отвлекись  ◉", "глаза слишком долго в одной точке. посмотри вдаль на 6м"),
+        ("◉  смягчи  ◉", "расфокусируй взгляд. открой периферию"),
+        ("◉  даль  ◉", "найди самую дальнюю точку и отдохни там"),
+    ],
+    "blink": [
+        ("◈  моргни  ◈", "медленно. три раза. почувствуй веки"),
+        ("◈  увлажни  ◈", "глаза сухие. моргни полностью, закрой на 2 секунды"),
+        ("◈  сброс  ◈", "закрой глаза на 5 секунд"),
+    ],
+    "jaw": [
+        ("⏾  разожми  ⏾", "губы расслаблены, язык на нёбе"),
+        ("⏾  мягче  ⏾", "челюсть не должна быть напряжена. дай ей отвиснуть"),
+        ("⏾  отпусти  ⏾", "помассируй жевательные мышцы пальцами"),
+    ],
+    "breath": [
+        ("〰️  дыши  〰️", "вдох 4с — задержка 2с — выдох 6с"),
+        ("〰️  медленнее  〰️", "дыхание — твой якорь. почувствуй его"),
+        ("〰️  сброс  〰️", "три глубоких вдоха. носом вдох, ртом выдох"),
+    ],
+    "tension": [
+        ("⚡  встряхнись  ⚡", "потряси кистями 10 секунд"),
+        ("⚡  микро-пауза  ⚡", "встань. руки вверх. глубокий вдох"),
+        ("⚡  сброс  ⚡", "покрути запястьями, пожми плечами, пошевели пальцами"),
+    ],
+    "stillness": [
+        ("⋯  движись  ⋯", "ты слишком долго без движения. смени позу"),
+        ("⋯  поток  ⋯", "микро-движение: нарисуй носом знак бесконечности"),
+        ("⋯  потянись  ⋯", "одна рука к потолку, потом другая"),
+    ],
+}
+
+
 def _mono_font(size: int, bold: bool = False) -> QtGui.QFont:
     f = QtGui.QFont("SF Mono", size)
     f.setFamilies(["SF Mono", "Menlo", "Monaco", "Courier New", "monospace"])
@@ -148,36 +199,41 @@ class ScreenDarkenOverlay(QtWidgets.QWidget):
         self._timer.start(20)
 
 
-def show_intervention(title: str, subtext: str, darken: bool = False):
-    if darken:
-        ScreenDarkenOverlay()
-    OverlayWindow(title, subtext)
+def show_intervention(kind: str):
+    msgs = INTERVENTION_RU.get(kind, [("⋆  пауза  ⋆", "")])
+    title, sub = random.choice(msgs)
+    OverlayWindow(title, sub)
 
 
 def show_slouch_warning():
     ScreenDarkenOverlay()
-    OverlayWindow("⟐  straighten  ⟐", "your body is your instrument", accent_color=QtGui.QColor(255, 140, 0))
+    OverlayWindow("⟐  выпрямись  ⟐", "твоё тело — твой инструмент", accent_color=QtGui.QColor(255, 140, 0))
 
 
 def show_tension_break():
     movements = [
-        "rotate your wrists 3x",
-        "clench and release your jaw",
-        "roll your shoulders back",
-        "look at something 20 feet away",
-        "interlock fingers behind your head",
-        "shake your hands for 10 seconds",
-        "stand up, arms above head, breathe deep",
+        "покрути запястьями 3 раза",
+        "сожми и разожми челюсть",
+        "пожми плечами назад",
+        "посмотри на что-то в 6 метрах",
+        "сплети пальцы за головой",
+        "потряси кистями 10 секунд",
+        "встань, руки вверх, глубокий вдох",
     ]
-    OverlayWindow(f"⏾  micro-break  ⏾", random.choice(movements), accent_color=QtGui.QColor(0, 200, 200))
+    OverlayWindow("⏾  микро-пауза  ⏾", random.choice(movements), accent_color=QtGui.QColor(0, 200, 200))
 
 
 def show_anchor_prompt(file_path: str):
     short = file_path.split("/")[-1] if "/" in file_path else file_path
-    OverlayWindow(f"⚮  physical anchor  ⚮", f"'{short}' — strike a pose and hold it 5s", accent_color=QtGui.QColor(108, 99, 255))
+    OverlayWindow("⚮  физический якорь  ⚮", f"'{short}' — прими позу и держи 5с", accent_color=QtGui.QColor(108, 99, 255))
 
 
 def show_anchor_reminder(anchor: dict):
-    pose = anchor.get("pose", "your anchor pose")
+    pose = anchor.get("pose", "твою якорную позу")
     file_name = anchor.get("file", "").split("/")[-1]
-    OverlayWindow(f"⌇  recall  ⌇", f"recreate '{pose}' for '{file_name}' (3-5s)", accent_color=QtGui.QColor(200, 100, 255))
+    OverlayWindow("⌇  вспомни  ⌇", f"воспроизведи '{pose}' для '{file_name}' (3-5с)", accent_color=QtGui.QColor(200, 100, 255))
+
+
+def show_gesture_feedback(gesture: str):
+    label, desc = GESTURE_LABELS.get(gesture, ("Жест", ""))
+    OverlayWindow(f"👤  {label}", desc, accent_color=QtGui.QColor(0, 200, 100))
